@@ -1,0 +1,13 @@
+ID,fields.tip_number:has_number_eq,fields.day_of_month:has_number_gte,fields.age_group_for_tips:has_any_word,Flow
+1,1,1,baby,PLH - Content - Time - One on one time baby - Timed intro
+2,1,1,teen,PLH - Content - Time - One on one time teen - Timed intro
+3,1,1,,PLH - Content - Time - One on one time child - Timed intro
+4,2,5,,PLH - Content - Time - CheckIn - One on one time
+5,3,8,baby,PLH - Content - Positive - Book sharing
+6,3,8,,PLH - Content - Education
+7,4,12,baby,PLH - Content - Positive - CheckIn - Book sharing
+8,4,12,,PLH - Content - Positive - CheckIn - Education
+9,5,15,,PLH - Content - Extra - Development
+10,6,19,,PLH - Supportive - Disability
+11,7,22,,PLH - Content - Time - CheckIn - One on one time
+12,8,29,baby,PLH - Content - Time - CheckIn - One on one time
