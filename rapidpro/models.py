@@ -22,6 +22,7 @@ class Action:
 
 
 class SendMessageAction(Action):
+    # TODO: Don't use mutable default values (bad things will happen)
     def __init__(self, text, attachments=[], quick_replies=[], all_urns=None):
         super().__init__('send_msg')
         self.text = text
@@ -33,14 +34,14 @@ class SendMessageAction(Action):
         self.quick_replies.append(quick_reply)
 
     def render(self):
-        render_dict = {
-            "attachments": self.attachments,
+        # Can we find a more compact way of invoking the superclass
+        # to render the common fields?
+        render_dict = super().render()
+        render_dict.update({
             "text": self.text,
-            "type": self.type,
-
-            "quick_replies": [],
-            "uuid": "6967333b-8ef0-4983-a223-b0a4c37447d1"
-        }
+            "attachments": self.attachments,
+            "quick_replies": [quick_reply for quick_reply in self.quick_replies],
+        })
 
         if self.all_urns:
             render_dict.update({
@@ -73,13 +74,11 @@ class GenericGroupAction(Action):
     def __init__(self, type, group_names):
         super().__init__(type)
         self.groups = [{
-            'uuid': generate_new_uuid(),
-            'name': group_name
+            'name': group_name  # We add group UUIDs during the validation step
         } for group_name in group_names]
 
     def add_group(self, group_name):
         self.groups.append({
-            'uuid': generate_new_uuid(),
             'name': group_name
         })
 
@@ -93,7 +92,6 @@ class AddContactGroupAction(GenericGroupAction):
 
     def add_group(self, group_name):
         self.groups.append({
-            'uuid': generate_new_uuid(),
             'name': group_name
         })
 
@@ -137,29 +135,44 @@ class SetRunResultAction(Action):
 
 
 class EnterFlowAction(Action):
-    def __init__(self, flow_names):
+    def __init__(self, flow_name):
         super().__init__('enter_flow')
-        self.flows = [{
-            'uuid': generate_new_uuid(),
+        self.flow = {
             'name': flow_name
-        } for flow_name in flow_names]
-
-    def add_flow(self, flow_name):
-        self.groups.append({
-            'uuid': generate_new_uuid(),
-            'name': flow_name
-        })
+            # We add flow UUIDs during the validation step
+        }
 
     def render(self):
         return {
             "type": self.type,
             "uuid": self.uuid,
-            "flow": self.flows
+            "flow": self.flow
         }
 
 
-# Check if the RapidPro implementation has such classes defined in its code somewhere
+class EnterFlowNode(RapidProNode):
+    def __init__(self, flow_name):
+        super().__init__()
+        # The default choice that is created during the super constructor
+        # has category name 'Other'. We should be able to choose our own
+        # name, in this case 'Expired'. 
+        self.add_action(EnterFlowAction(flow_name))
+        # add_choice takes a destination node rather than uuid.
+        # This is a problem here (code below doesn't work) --> change this.
+        super().add_choice(None, '@child.run.status', 'has_only_text', ['completed'],
+                   'Completed')
+        super().add_choice(None, '@child.run.status', 'has_only_text', ['expired'],
+                   'Expired')
 
+    def connect_outcome(self, destination_uuid, outcome):
+        pass
+        # TODO: implement and choose sensible name (or: connect_completed_exit/connect_expired_exit)
+        # outcome is either 'Completed' or 'Expired'
+        # change the exit destination of the corresponding category to destination_uuid
+        # --> Convenience function that finds the exit for a given category (name)
+
+
+# Check if the RapidPro implementation has such classes defined in its code somewhere
 
 class Exit:
     def __init__(self, destination_uuid=None):
@@ -182,9 +195,30 @@ class Exit:
 
 
 # TODO: Check enter flow
+# Node classification:
+# - Action-only node (for various actions)
+# - No action, split by variable [this includes wait_for_response]
+# - Action + split by variable:
+    # - Enter flow (Router with Completed/Expired)
+    # - Call webhook (Router with Success/Failure)
+# - No action, split by random
+
+# I believe that it is true that whenever we create a node,
+# we know what type of node it is.
+# Thus it is sensible to implement nodes via classes
+# Class tree (suggestion)
+# GenericNode (allows for actions)
+#   SwitchRouterNode
+#     EnterFlowNode
+#     WebhookNode
+#   RandomRouterNode
+# possibly more: dedicated subclasses for any kind of node where
+# there is extra complexity that goes beyond the Action object.
+#   wait_for_response is a potential instance of that
 class RapidProNode:
     def __init__(self):
-        self.uuid = str(uuid.uuid4())
+        # Add optional action to constructor for convenience?
+        self.uuid = generate_new_uuid()
         self.actions = []
         self.router = None
         # Each node must have an exit.
@@ -201,6 +235,9 @@ class RapidProNode:
     def add_action(self, action):
         self.actions.append(action)
 
+    # add_choice/add_default_choice is only applicable to nodes that have a switch router.
+    # --> These should go into the corresponding subclass of Node?
+    # --> Remove router from constructor
     def add_default_choice(self, destination_node):
         if self.router is not None:
             self.router.add_default_choice(self.exits[0].uuid)
@@ -218,7 +255,9 @@ class RapidProNode:
         '''
 
         # Find/Create an exit for the appropriate choice
-        # TODO: Check if this is how it works if we have multiple categories leading into the same node
+        # TODO: This is not actually how this works. Even if multiple categories are connected
+        # to the same node, each of them has its own exit.
+        # --> This code can be simplified
         for exit in self.exits:
             if exit.destination_uuid == destination_node.uuid:
                 destination_exit = exit
@@ -228,6 +267,8 @@ class RapidProNode:
 
         if self.router is None:
             self.router = SwitchRouter(self.exits[0].uuid)
+        # TODO: If the category_name already exists, we don't actually
+        # want to create a new exit.
         self.router.add_choice(destination_exit, comparison_variable, comparison_type, comparison_arguments,
                                category_name)
 
@@ -247,7 +288,7 @@ class RapidProNode:
 
 class RouterCategory:
     def __init__(self, name, exit_uuid, is_default=False):
-        self.uuid = str(uuid.uuid4())
+        self.uuid = generate_new_uuid()
         self.name = name
         self.exit_uuid = exit_uuid
         self.is_default = is_default
@@ -256,6 +297,7 @@ class RouterCategory:
         return {
             'uuid': self.uuid,
             'name': self.name,
+            'exit_uuid' : self.exit_uuid,
         }
 
 
@@ -268,7 +310,7 @@ def categoryNameFromComparisonArguments(comparison_arguments):
 
 class RouterCase:
     def __init__(self, comparison_type, arguments, category_uuid):
-        self.uuid = str(uuid.uuid4())
+        self.uuid = generate_new_uuid()
         self.type = comparison_type
         self.arguments = arguments
         self.category_uuid = category_uuid
@@ -337,49 +379,50 @@ class SwitchRouter(AbstractRouter):
     def add_category(self, category):
         self.categories.append(category)
 
+    def get_category_by_name(self, category_name, exit):
+        # Find category of the given name, or create if none exists
+        for category in self.categories:
+            if category_name == category.name:
+                if category.exit_uuid == exit_uuid
+                    return category
+                else:
+                    raise ValueError("A category can have only one exit.")
+        # No category of this name found.
+        category = RouterCategory(category_name, exit.uuid)
+        self.add_category(category)
+        return category
+
     def add_case(self, case):
         self.cases.append(case)
 
-    def set_operand(self):
-        # specify the operand that the cases check for
-        # done during init?
-        pass
+    def set_operand(self, operand):
+        if self.operand is None:
+            self.operand = operand
+        else if self.operand != operand:
+            # TODO: Sensible exception handling that allows us to trace down
+            # errors to specific operations/rows
+            raise ValueError("A router can only have a single operand.")
 
+    # inconsistent signature with add_choice: specify exit or exit_uuid?
+    # Also make consistent with constructor signature
     def add_default_choice(self, exit_uuid):
         self.categories[0].exit_uuid = exit_uuid
-
 
     def add_choice(self, exit, comparison_variable, comparison_type, comparison_arguments, category_name=None):
         # Adds a case that compares the operand to the comparison_value using comparison_type
         # Adds a category of the given name that the case belongs to
         #     (if not provided, name is auto-generated from comparison_value and ensured to be unique)
         # Connects the category to the specified exit.
-        if category_name is not None:
-            # TODO: Check whether the category name already exists.
-            # If yes, connect to the existing category, and
-            # warn if there is a mismatch between the exit of the category and the exit provided here
-            # TODO: Check if this behavior works like this in RapidPro.
-            # if category_name in [category.name for category in self.categories]:
-            pass
-        else:
+        if category_name is None:
             category_name = categoryNameFromComparisonArguments(comparison_arguments)
-
-        if self.operand is None:
-            self.operand = comparison_variable
-        else:
-            if self.operand != comparison_variable:
-                # TODO: Sensible exception handling that allows us to trace down
-                # errors to specific operations/rows
-                raise ValueError("A router can only have a single operand.")
-
-        category = RouterCategory(category_name, exit.uuid)
+        category = get_category_by_name(category_name, exit)
         case = RouterCase(comparison_type, comparison_arguments, category.uuid)
-        self.add_category(category)
         self.add_case(case)
+        self.set_operand(comparison_variable)
 
     def render(self):
         if self.operand is None:
-            raise ValueError("Trying to render incomplete router.")
+            raise ValueError("Trying to render incomplete switch router.")
 
         fields = super().render()
         fields.update({
