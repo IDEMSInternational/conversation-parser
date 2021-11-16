@@ -179,9 +179,10 @@ class EnterFlowNode(RapidProNode):
 # Check if the RapidPro implementation has such classes defined in its code somewhere
 
 class Exit:
-    def __init__(self, destination_uuid=None):
+    def __init__(self, destination_uuid=None, exit_uuid=None):
+        self.uuid = exit_uuid if exit_uuid else generate_new_uuid()
         self.destination_uuid = destination_uuid
-        self.uuid = generate_new_uuid()
+
 
     def render(self):
         return {
@@ -304,7 +305,7 @@ class RouterCategory:
         self.is_default = is_default
 
     def get_exit(self):
-        return Exit(self.destination_uuid)
+        return Exit(exit_uuid=self.exit_uuid, destination_uuid=self.destination_uuid)
 
     def render(self):
         return {
