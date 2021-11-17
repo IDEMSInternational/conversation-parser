@@ -41,7 +41,7 @@ class BaseNode:
         self.default_exit = None
         self.exits = []
 
-    def add_default_exit(self, destination_uuid):
+    def add_default_exit(self):
         self.default_exit = Exit(destination_uuid=self.default_exit_uuid)
 
     def _add_exit(self, exit):
