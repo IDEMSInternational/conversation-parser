@@ -154,7 +154,7 @@ class EnterFlowNode(BaseNode):
                         category_destination_uuid=complete_destination_uuid)
         self.add_choice(comparison_variable='@child.run.status', comparison_type='has_only_text',
                         comparison_arguments='expired', category_name='Expired',
-                        category_destination_uuid=expired_destination_uuid)
+                        category_destination_uuid=expired_destination_uuid, is_default=True)
 
     def add_choice(self, **kwargs):
         self.router.add_choice(**kwargs)
