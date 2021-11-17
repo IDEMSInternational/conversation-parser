@@ -142,24 +142,30 @@ class RandomRouterNode(BaseNode):
 
 
 class EnterFlowNode(BaseNode):
-    def __init__(self, flow_name):
+    def __init__(self, flow_name, complete_destination_uuid, expired_destination_uuid):
         super().__init__()
-        # The default choice that is created during the super constructor
-        # has category name 'Other'. We should be able to choose our own
-        # name, in this case 'Expired'.
-        self.add_action(EnterFlowAction(flow_name))
-        # add_choice takes a destination node rather than uuid.
-        # This is a problem here (code below doesn't work) --> change this.
-        super().add_choice(None, '@child.run.status', 'has_only_text', ['completed'],
-                           'Completed')
-        super().add_choice(None, '@child.run.status', 'has_only_text', ['expired'],
-                           'Expired')
 
-    def connect_outcome(self, destination_uuid, outcome):
+        self._add_action(EnterFlowAction(flow_name))
+
+        self.router = SwitchRouter(operand='@child.run.status', result_name=None, wait_for_message=False)
+
+        self.add_choice(comparison_variable='@child.run.status', comparison_type='has_only_text',
+                        comparison_arguments='completed', category_name='Complete',
+                        category_destination_uuid=complete_destination_uuid)
+        self.add_choice(comparison_variable='@child.run.status', comparison_type='has_only_text',
+                        comparison_arguments='expired', category_name='Expired',
+                        category_destination_uuid=expired_destination_uuid, is_default=True)
+
+    def add_choice(self, **kwargs):
+        self.router.add_choice(**kwargs)
+
+    def validate(self):
         pass
-        # TODO: implement and choose sensible name (or: connect_completed_exit/connect_expired_exit)
-        # outcome is either 'Completed' or 'Expired'
-        # change the exit destination of the corresponding category to destination_uuid
-        # --> Convenience function that finds the exit for a given category (name)
 
-# Check if the RapidPro implementation has such classes defined in its code somewhere
+    def render(self):
+        return {
+            "uuid": self.uuid,
+            "actions": [action.render() for action in self.actions],
+            "router": self.router.render(),
+            "exits": [category.get_exit() for category in self.router.categories]
+        }

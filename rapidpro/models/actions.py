@@ -11,7 +11,6 @@ from rapidpro.utils import generate_new_uuid
 
 
 class Action:
-
     def __init__(self, type):
         self.uuid = generate_new_uuid()
         self.type = type
@@ -144,8 +143,8 @@ class EnterFlowAction(Action):
     def __init__(self, flow_name):
         super().__init__('enter_flow')
         self.flow = {
-            'name': flow_name
-            # We add flow UUIDs during the validation step
+            'name': flow_name,
+            'uuid': generate_new_uuid()
         }
 
     def render(self):
