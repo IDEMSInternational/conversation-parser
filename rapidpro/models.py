@@ -40,7 +40,7 @@ class SendMessageAction(Action):
         render_dict.update({
             "text": self.text,
             "attachments": self.attachments,
-            "quick_replies": [quick_reply for quick_reply in self.quick_replies],
+            "quick_replies": self.quick_replies,
         })
 
         if self.all_urns:
@@ -109,7 +109,11 @@ class RemoveContactGroupAction(GenericGroupAction):
         self.all_groups = all_groups
 
     def render(self):
-        render_dict = super().render()
+        render_dict = {
+            "type": self.type,
+            "uuid": self.uuid,
+            "groups": self.groups,
+        }
         if self.all_groups:
             render_dict.update({
                 'all_groups': self.all_groups
@@ -160,9 +164,9 @@ class EnterFlowNode(RapidProNode):
         # add_choice takes a destination node rather than uuid.
         # This is a problem here (code below doesn't work) --> change this.
         super().add_choice(None, '@child.run.status', 'has_only_text', ['completed'],
-                   'Completed')
+                           'Completed')
         super().add_choice(None, '@child.run.status', 'has_only_text', ['expired'],
-                   'Expired')
+                           'Expired')
 
     def connect_outcome(self, destination_uuid, outcome):
         pass
@@ -175,9 +179,10 @@ class EnterFlowNode(RapidProNode):
 # Check if the RapidPro implementation has such classes defined in its code somewhere
 
 class Exit:
-    def __init__(self, destination_uuid=None):
+    def __init__(self, destination_uuid=None, exit_uuid=None):
+        self.uuid = exit_uuid if exit_uuid else generate_new_uuid()
         self.destination_uuid = destination_uuid
-        self.uuid = generate_new_uuid()
+
 
     def render(self):
         return {
@@ -199,8 +204,8 @@ class Exit:
 # - Action-only node (for various actions)
 # - No action, split by variable [this includes wait_for_response]
 # - Action + split by variable:
-    # - Enter flow (Router with Completed/Expired)
-    # - Call webhook (Router with Success/Failure)
+# - Enter flow (Router with Completed/Expired)
+# - Call webhook (Router with Success/Failure)
 # - No action, split by random
 
 # I believe that it is true that whenever we create a node,
@@ -287,17 +292,26 @@ class RapidProNode:
 
 
 class RouterCategory:
-    def __init__(self, name, exit_uuid, is_default=False):
+    def __init__(self, name, destination_uuid, is_default=False):
+        """
+        :param name: Name of the category
+        :param destination_uuid: The UUID of the node that this category should point to
+        :param is_default: is this the default category?
+        """
         self.uuid = generate_new_uuid()
         self.name = name
-        self.exit_uuid = exit_uuid
+        self.exit_uuid = generate_new_uuid()
+        self.destination_uuid = destination_uuid
         self.is_default = is_default
+
+    def get_exit(self):
+        return Exit(exit_uuid=self.exit_uuid, destination_uuid=self.destination_uuid)
 
     def render(self):
         return {
             'uuid': self.uuid,
             'name': self.name,
-            'exit_uuid' : self.exit_uuid,
+            'exit_uuid': self.exit_uuid,
         }
 
 
@@ -324,131 +338,116 @@ class RouterCase:
         }
 
 
-
-class AbstractRouter:
-    def __init__(self, choices=None):
+class BaseRouter:
+    def __init__(self, operand, result_name=None, wait_for_message=False):
+        self.type = None
         self.categories = []
-        self.choices = choices
-        self.cases = []
         self.default_category_uuid = None
-        self.exits = []
-
-    def get_router_detail(self):
-        router_category = RouterCategory()
-        router_exit = Exit()
-        router_case = RouterCase()
-
-        current_category = router_category.render(None)
-
-        self.categories.append(current_category)
-        self.exits.append(router_exit.render(current_category['exit_uuid']))
-        self.default_category_uuid = current_category['uuid']
-        for choice in self.choices:
-            current_category = router_category.render(None)
-            self.categories.append(current_category)
-            self.exits.append(router_exit.render(current_category['exit_uuid']))
-            self.cases.append(router_case.render(choice, current_category['uuid']))
-
-    def render(self):
-        return {
-            # These are the only two fields common to switch and random routers
-            'type': self.type,
-            'categories': [category.render() for category in self.categories],
-            # 'operand': '@input',
-            # 'cases': self.cases,
-            # 'default_category_uuid': self.default_category_uuid,
-        }
-
-
-class SwitchRouter(AbstractRouter):
-    # I didn't touch the AbstractRouter class, except for the render function
-    # which I invoke here.
-
-    def __init__(self, exit_uuid):
-        '''
-        exit_uuid: UUID of the exit the default category is connected to.
-        '''
-
-        self.type = 'switch'
-        self.categories = [RouterCategory('Other', exit_uuid)]
-        self.default_category_uuid = self.categories[0].uuid
-        self.operand = None
         self.cases = []
-        self.wait = None
+        self.operand = operand
+        self.wait_for_message = wait_for_message
+        self.result_name = result_name
 
-    def add_category(self, category):
+    def set_result_name(self, result_name):
+        self.result_name = result_name
+
+    def _get_category_or_none(self, category_name):
+        result = [c for c in self.categories if c.name == category_name]
+        if result:
+            return result[0]
+
+    def _has_default_category(self):
+        result = [c for c in self.categories if c.is_default]
+        return bool(result)
+
+    def _add_category(self, category_name, destination_uuid, is_default):
+        if self._has_default_category() and is_default:
+            logger.warning(f'Overwriting default category for Router {self.uuid}')
+
+        category = RouterCategory(category_name, destination_uuid, is_default)
+
+        if is_default:
+            self.default_category_uuid = category.uuid
+
         self.categories.append(category)
+        return self.categories[-1]
 
-    def get_category_by_name(self, category_name, exit):
-        # Find category of the given name, or create if none exists
-        for category in self.categories:
-            if category_name == category.name:
-                if category.exit_uuid == exit_uuid
-                    return category
-                else:
-                    raise ValueError("A category can have only one exit.")
-        # No category of this name found.
-        category = RouterCategory(category_name, exit.uuid)
-        self.add_category(category)
-        return category
+    def _get_case_or_none(self, comparison_type, arguments, category_uuid):
+        for case in self.cases:
+            if case.comparison_type == comparison_type \
+                    and case.arguments == arguments \
+                    and case.category_uuid == category_uuid:
+                return case
 
-    def add_case(self, case):
-        self.cases.append(case)
+    def _add_case(self, comparison_type, arguments, category_uuid):
+        case = RouterCase(comparison_type, arguments, category_uuid)
+        self.cases.add(case)
+        return self.cases[-1]
+
+    def get_or_create_case(self, comparison_type, arguments, category_name):
+        category = self._get_category_or_none()
+        if not category:
+            raise ValueError(f'Category ({category_name}) not found. Please add category before adding the case')
+
+        case = self._get_case_or_none(comparison_type, arguments, category.uuid)
+        return case if case else self._add_case(comparison_type, arguments, category.uuid)
+
+    def get_or_create_category(self, category_name, destination_uuid, is_default=False):
+        category = self._get_category_or_none(category_name)
+
+        return category if category else self._add_category(category_name, destination_uuid, is_default)
 
     def set_operand(self, operand):
-        if self.operand is None:
-            self.operand = operand
-        else if self.operand != operand:
-            # TODO: Sensible exception handling that allows us to trace down
-            # errors to specific operations/rows
-            raise ValueError("A router can only have a single operand.")
+        if self.operand and self.operand != operand:
+            logger.warning(f'Overwriting operand from {self.operand} -> {operand}')
+        self.operand = operand
 
-    # inconsistent signature with add_choice: specify exit or exit_uuid?
-    # Also make consistent with constructor signature
-    def add_default_choice(self, exit_uuid):
-        self.categories[0].exit_uuid = exit_uuid
+    def render(self):
+        raise NotImplementedError
 
-    def add_choice(self, exit, comparison_variable, comparison_type, comparison_arguments, category_name=None):
-        # Adds a case that compares the operand to the comparison_value using comparison_type
-        # Adds a category of the given name that the case belongs to
-        #     (if not provided, name is auto-generated from comparison_value and ensured to be unique)
-        # Connects the category to the specified exit.
-        if category_name is None:
-            category_name = categoryNameFromComparisonArguments(comparison_arguments)
-        category = get_category_by_name(category_name, exit)
-        case = RouterCase(comparison_type, comparison_arguments, category.uuid)
-        self.add_case(case)
+
+class SwitchRouter(BaseRouter):
+
+    def __init__(self, operand, result_name=None, wait_for_message=False):
+        super().__init__(operand, result_name, wait_for_message)
+        self.type = 'switch'
+
+    def add_choice(self, comparison_variable, comparison_type, comparison_arguments, category_name,
+                   category_destination_uuid, is_default=False):
+        category = self.get_or_create_category(category_name, category_destination_uuid, is_default)
+        self.get_or_create_case(comparison_type, comparison_arguments, category.name)
+
         self.set_operand(comparison_variable)
+        return category
 
     def render(self):
-        if self.operand is None:
-            raise ValueError("Trying to render incomplete switch router.")
+        # TODO: validate
+        render_dict = {
+            "type": self.type,
+            "operand": self.operand,
+            "cases": [case.render() for case in self.cases],
+            "categories": [category.render() for category in self.categories],
+            "default_category_uuid": self.default_category_uuid
+        }
+        if self.wait_for_message:
+            render_dict.update({
+                "wait": {
+                    "type": "msg",
+                }
+            })
+        return render_dict
 
-        fields = super().render()
-        fields.update({
-            'default_category_uuid': self.default_category_uuid,
-            'operand': self.operand,
-            'cases': [case.render() for case in self.cases],
-        })
-        if self.wait is not None:
-            # TODO: Render the wait.
-            pass
-        return fields
 
-
-class RandomRouter:
-    def __init__(self):
+class RandomRouter(BaseRouter):
+    def __init__(self, operand, result_name=None, wait_for_message=False):
+        super().__init__(operand, result_name, wait_for_message)
         self.type = 'random'
-        self.choices = None
-        self.router = {}
+
+    def add_choice(self, category_name, destination_uuid, is_default=False):
+        self.get_or_create_category(category_name, destination_uuid, is_default)
 
     def render(self):
-        abstract_router = AbstractRouter(self.choices)
-        current_router = abstract_router.render()
-        self.router.update(current_router)
-
         return {
-            'uuid': str(uuid.uuid4()),
-            'router': self.router,
-            'exits': current_router['exits']
+            "type": self.type,
+            "categories": [category.render() for category in self.categories]
         }
