@@ -9,13 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 class BaseRouter:
-    def __init__(self, operand, result_name=None, wait_for_message=False):
+    def __init__(self, result_name=None):
         self.type = None
         self.categories = []
         self.default_category_uuid = None
         self.cases = []
-        self.operand = operand
-        self.wait_for_message = wait_for_message
         self.result_name = result_name
 
     def set_result_name(self, result_name):
@@ -44,18 +42,18 @@ class BaseRouter:
 
     def _get_case_or_none(self, comparison_type, arguments, category_uuid):
         for case in self.cases:
-            if case.comparison_type == comparison_type \
+            if case.type == comparison_type \
                     and case.arguments == arguments \
                     and case.category_uuid == category_uuid:
                 return case
 
     def _add_case(self, comparison_type, arguments, category_uuid):
         case = RouterCase(comparison_type, arguments, category_uuid)
-        self.cases.add(case)
+        self.cases.append(case)
         return self.cases[-1]
 
     def get_or_create_case(self, comparison_type, arguments, category_name):
-        category = self._get_category_or_none()
+        category = self._get_category_or_none(category_name)
         if not category:
             raise ValueError(f'Category ({category_name}) not found. Please add category before adding the case')
 
@@ -67,10 +65,8 @@ class BaseRouter:
 
         return category if category else self._add_category(category_name, destination_uuid, is_default)
 
-    def set_operand(self, operand):
-        if self.operand and self.operand != operand:
-            logger.warning(f'Overwriting operand from {self.operand} -> {operand}')
-        self.operand = operand
+    def get_exits(self):
+        return [c.get_exit() for c in self.categories]
 
     def render(self):
         raise NotImplementedError
@@ -79,16 +75,24 @@ class BaseRouter:
 class SwitchRouter(BaseRouter):
 
     def __init__(self, operand, result_name, wait_for_message):
-        super().__init__(operand, result_name, wait_for_message)
+        super().__init__(result_name)
         self.type = 'switch'
+        self.operand = operand
+        self.wait_for_message = wait_for_message
 
     def add_choice(self, comparison_variable, comparison_type, comparison_arguments, category_name,
                    category_destination_uuid, is_default=False):
         category = self.get_or_create_category(category_name, category_destination_uuid, is_default)
-        self.get_or_create_case(comparison_type, comparison_arguments, category.name)
+        if not is_default:
+            self.get_or_create_case(comparison_type, comparison_arguments, category.name)
 
         self.set_operand(comparison_variable)
         return category
+
+    def set_operand(self, operand):
+        if self.operand and self.operand != operand:
+            logger.warning(f'Overwriting operand from {self.operand} -> {operand}')
+        self.operand = operand
 
     def validate(self):
         # TODO: Add validation
@@ -113,8 +117,9 @@ class SwitchRouter(BaseRouter):
 
 
 class RandomRouter(BaseRouter):
-    def __init__(self, operand, result_name=None, wait_for_message=False):
-        super().__init__(operand, result_name, wait_for_message)
+    # Wait for message and operand are not required in RandomRouter
+    def __init__(self, result_name=None):
+        super().__init__(result_name)
         self.type = 'random'
 
     def add_choice(self, category_name, destination_uuid, is_default=False):

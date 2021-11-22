@@ -42,12 +42,12 @@ class BaseNode:
         self.exits = []
 
     def add_default_exit(self, destination_uuid):
-        self.default_exit = Exit(destination_uuid=self.default_exit_uuid)
+        self.default_exit = Exit(destination_uuid=destination_uuid)
 
     def _add_exit(self, exit):
         self.exits.append(exit)
 
-    def _add_action(self, action):
+    def add_action(self, action):
         self.actions.append(action)
 
     def add_choice(self):
@@ -81,8 +81,8 @@ class BasicNode(BaseNode):
         if not self.has_basic_exit:
             raise ValueError('has_basic_exit must be True for BasicNode')
 
-        if not self.default_exit_uuid:
-            raise ValueError('default_exit_uuid must be set for BasicNode')
+        if not self.default_exit:
+            raise ValueError('default_exit must be set for BasicNode')
 
     def render(self):
         self.validate()
@@ -113,7 +113,7 @@ class SwitchRouterNode(BaseNode):
         return {
             "uuid": self.uuid,
             "router": self.router.render(),
-            "exits": [category.get_exit() for category in self.router.categories]
+            "exits": self.router.get_exits()
         }
 
 
@@ -137,7 +137,7 @@ class RandomRouterNode(BaseNode):
         return {
             "uuid": self.uuid,
             "router": self.router.render(),
-            "exits": [category.get_exit() for category in self.router.categories]
+            "exits": self.router.get_exits()
         }
 
 
@@ -145,7 +145,7 @@ class EnterFlowNode(BaseNode):
     def __init__(self, flow_name, complete_destination_uuid, expired_destination_uuid):
         super().__init__()
 
-        self._add_action(EnterFlowAction(flow_name))
+        self.add_action(EnterFlowAction(flow_name))
 
         self.router = SwitchRouter(operand='@child.run.status', result_name=None, wait_for_message=False)
 
@@ -167,5 +167,5 @@ class EnterFlowNode(BaseNode):
             "uuid": self.uuid,
             "actions": [action.render() for action in self.actions],
             "router": self.router.render(),
-            "exits": [category.get_exit() for category in self.router.categories]
+            "exits": self.router.get_exits()
         }
