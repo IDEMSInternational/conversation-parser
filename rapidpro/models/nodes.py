@@ -120,7 +120,7 @@ class SwitchRouterNode(BaseNode):
         return {
             "uuid": self.uuid,
             "router": self.router.render(),
-            "exits": self.router.get_exits()
+            "exits": [exit.render() for exit in self.router.get_exits()]
         }
 
 

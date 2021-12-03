@@ -1,4 +1,4 @@
-row_id,type,from,condition,condition_var,condition_type,condition_name,save_name,message_text,choice_1,choice_2,choice_3,choice_4,choice_5,choice_6,choice_7,choice_8,choice_9,choice_10,image,audio,video,obj_name,obj_id,node_name,_nodeId,no_response,_ui_type,_ui_position
+row_id,type,from,condition,condition_var,condition_type,condition_name,save_name,message_text,choice:1,choice:2,choice:3,choice:4,choice:5,choice:6,choice:7,choice:8,choice:9,choice:10,image,audio,video,obj_name,obj_id,node_name,_nodeId,no_response,_ui_type,_ui_position
 1,send_message,start,,,,,,this is a send message node,qr1,qr2,,,,,,,,,,,,,,A,769804d7-7343-4e78-97f3-7a113e8222d2,,execute_actions,280;73
 2,send_message,1,,,,,,message with image,,,,,,,,,,,image u,,,,,A,769804d7-7343-4e78-97f3-7a113e8222d2,,execute_actions,280;73
 3,send_message,2,,,,,,message with audio,,,,,,,,,,,,audio u,,,,A,769804d7-7343-4e78-97f3-7a113e8222d2,,execute_actions,280;73

@@ -2,14 +2,17 @@ import json
 import unittest
 
 from rapidpro.parser import Parser
-from rapidpro.utils import get_dict_from_csv
+from rapidpro.utils import get_dict_from_csv, get_cell_type_for_column_header, CellType, get_object_from_cell_value, \
+    get_separators
 
 
 class TestParsing(unittest.TestCase):
 
-    def test_no_switch_node_rows(self):
+    def setUp(self) -> None:
         self.no_switch_nodes_rows = get_dict_from_csv('inputs/all_test_flows - _no_switch_nodes.csv')
+        self.switch_node_rows = get_dict_from_csv('inputs/all_test_flows - _switch_nodes.csv')
 
+    def test_no_switch_node_rows(self):
         parser = Parser(None, sheet_rows=self.no_switch_nodes_rows, flow_name='no_switch_node')
 
         parser.parse()
@@ -94,3 +97,46 @@ class TestParsing(unittest.TestCase):
 
         self.assertIsNone(node_4['exits'][0]['destination_uuid'])
 
+    def test_cell_type_from_condition_header(self):
+        self.assertEqual(CellType.OBJECT, get_cell_type_for_column_header('condition:0'))
+        self.assertEqual(CellType.OBJECT, get_cell_type_for_column_header('condition:1'))
+        self.assertEqual(CellType.OBJECT, get_cell_type_for_column_header('condition:10'))
+        self.assertEqual(CellType.OBJECT, get_cell_type_for_column_header('condition:100'))
+
+    def test_cell_type_from_other_header(self):
+        self.assertEqual(CellType.TEXT, get_cell_type_for_column_header('condition_type'))
+
+    def test_get_object_from_cell_value(self):
+        obj = get_object_from_cell_value('condition;a|condition_type;has_any_word|condition_name;A')
+        self.assertDictEqual(
+            {'condition': 'a', 'condition_type': 'has_any_word', 'condition_name': 'A'},
+            obj)
+
+    def test_get_separators(self):
+        s_1, s_2, s_3 = get_separators('|;::;|')
+        self.assertEqual('|', s_1)
+        self.assertEqual(';', s_2)
+        self.assertEqual(':', s_3)
+
+        s_1, s_2, s_3 = get_separators('|;|;|')
+        self.assertEqual('|', s_1)
+        self.assertEqual(';', s_2)
+        self.assertIsNone(s_3)
+
+        s_1, s_2, s_3 = get_separators('|:|:|')
+        self.assertEqual('|', s_1)
+        self.assertEqual(':', s_2)
+        self.assertIsNone(s_3)
+
+        s_1, s_2, s_3 = get_separators(';:;:')
+        self.assertEqual(';', s_1)
+        self.assertEqual(':', s_2)
+        self.assertIsNone(s_3)
+
+
+    def test_switch_node_rows(self):
+        parser = Parser(None, sheet_rows=self.switch_node_rows, flow_name='switch_node')
+        parser.parse()
+
+        render_output = parser.container.render()
+        print(json.dumps(render_output))

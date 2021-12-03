@@ -382,3 +382,8 @@ class SaveNameCollection(RapidProNode):
     def get_nodes(self):
         return [node for node in
                 [self.base_node, self.save_name_conditional_node, self.save_name_node, self.conditional_node] if node]
+
+
+
+
+
