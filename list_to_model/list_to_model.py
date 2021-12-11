@@ -3,6 +3,11 @@ from typing import List
 from pydantic import BaseModel
 
 
+class MockCellParser:
+    def parse(self, value):
+        return value
+
+
 class ParserModel(BaseModel):
 
     def header_name_to_field_name(header):
@@ -24,9 +29,10 @@ class RowParser:
     # and the values are the cell content converted into nested lists.
     # Turns this into an instance of the provided model.
 
-    def __init__(self, model):
+    def __init__(self, model, cell_parser):
         self.model = model
         self.output = None  # Gets reinitialized with each call to parse_row
+        self.cell_parser = cell_parser
 
     def try_assign_as_kwarg(self, field, key, value, model):
         # If value can be interpreted as a (field, field_value) pair for a field of model,
@@ -103,13 +109,11 @@ class RowParser:
             # TODO: Ensure the types match. E.g. we don't want value to be a list
             field[key] = model(value)
 
-    def find_entry_and_assign(self, model, output_field, field_path, value):
+    def find_entry(self, model, output_field, field_path):
         # Without the output_field (which may be a nested structure),
         # traverse the field_path to find the subfield to assign the value to.
-        # Then assign the value.
-        # The recursion here is used to find the model and the entry
-        # in the output where value should be assigned.
-        # We then call assign_value to do the actual assignment.
+        # Return that field (via a parent object and a key, so that we can
+        # overwrite its value) and its model.
 
         # Note: model is the model/type that the output_field should correspond to
         # (though objects are modeled as dicts in the output). It helps us
@@ -148,8 +152,9 @@ class RowParser:
                 output_field[key] = None
 
         if len(field_path) == 1:
-            # We're reach the end of the field_path --> assign
-            self.assign_value(output_field, key, value, child_model)
+            # We're reach the end of the field_path
+            # Therefore we've found where we need to assign
+            return output_field, key, child_model
         else:
             # The field has subfields, keep going and recurse.
             # If field doesn't exist yet in our output object, create it.
@@ -158,21 +163,19 @@ class RowParser:
             elif issubclass(child_model, ParserModel) and output_field[key] is None:
                 output_field[key] = {}
             # recurse
-            self.find_entry_and_assign(child_model, output_field[key], field_path[1:], value)
+            return self.find_entry(child_model, output_field[key], field_path[1:])
 
     def parse_entry(self, column_name, value):
         # This creates/populates a field in self.output
         # The field is determined by column_name, its value by value
-
-        # TODO: We have to refactor find_entry_and_assign to only do
-        # find_entry, and instead return the information that is needed
-        # to do the assignment. Then, before doing the assignment,
-        # we have check whether the type is basic or list/object,
-        # and depending on that send the value to the StringParser
-        # (which turns strings into lists of lists).
-        # Only then we then feed the value into the assign function.
         field_path = column_name.split(':')
-        self.find_entry_and_assign(self.model, self.output, field_path, value)
+        field, key, model = self.find_entry(self.model, self.output, field_path)
+        if issubclass(model, List) or issubclass(model, ParserModel):
+            # If the expected type of the value is list/object,
+            # parse the cell content as such.
+            # Otherwise leave it as a string
+            value = self.cell_parser.parse(value)
+        self.assign_value(field, key, value, model)
 
     def parse_row(self, data):
         # data is a dict where the keys are column header names,

@@ -1,7 +1,7 @@
 import unittest
 import json
 
-from list_to_model import RowParser
+from list_to_model import RowParser, MockCellParser
 from models import FromWrong
 
 
@@ -100,7 +100,7 @@ output_single_kwarg_exp = FromWrong(**{
 class TestDifferentWays(unittest.TestCase):
 
     def setUp(self):
-        self.parser = RowParser(FromWrong)
+        self.parser = RowParser(FromWrong, MockCellParser())
 
     def test_different_ways(self):
         inputs = [input1, input2, input3, input4, input5, input6, input7, input8, input9]

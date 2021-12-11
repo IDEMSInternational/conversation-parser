@@ -1,7 +1,7 @@
 import unittest
 import json
 
-from list_to_model import RowParser
+from list_to_model import RowParser, MockCellParser
 from models import RowData
 
 
@@ -159,7 +159,7 @@ output6_exp = RowData(**{
 class TestDifferentWays(unittest.TestCase):
 
     def setUp(self):
-        self.parser = RowParser(RowData)
+        self.parser = RowParser(RowData, MockCellParser())
 
     def test_input_1(self):
         output1 = self.parser.parse_row(input1)
