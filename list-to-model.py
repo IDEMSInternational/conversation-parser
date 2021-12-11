@@ -1,6 +1,6 @@
+from collections import defaultdict
 from typing import List
 from pydantic import BaseModel
-
 
 class Condition(BaseModel):
     value: str = ''
@@ -236,15 +236,36 @@ class RowParser:
     def parse_row(self, data):
         # Initialize the output template as a dict
         self.output = dict()
+
+        # For each column with an asterisk (*) (indicating list of fields),
+        # Compute how long the implied list is by taking the maximum
+        # over the lengths of all fields that this list refers to.
+        # Note: So far, no nested asterisks are supported.
+        asterisk_list_lengths = defaultdict(lambda: 1)
         for k,v in data.items():
-            self.parse_entry(k,v)   
+            if '*' in k and type(v) == list:
+                prefix = k.split('*')[0]
+                asterisk_list_lengths[prefix] = max(asterisk_list_lengths[prefix], len(v))
+        # Process each entry
+        for k,v in data.items():
+            if '*' in k:
+                # Process each prefix:*:suffix column entry by assigning the individual
+                # list values to prefix:1:suffix, prefix:2:suffix, etc
+                prefix = k.split('*')[0]
+                if type(v) != list:
+                    v = [v]*asterisk_list_lengths[prefix]
+                for i, elem in enumerate(v):
+                    self.parse_entry(k.replace('*', str(i+1)), elem)
+            else:
+                # Normal, non-* column entry.
+                self.parse_entry(k,v)
         # Returning an instance of the model rather than the output directly
         # helps us fill in default values where no entries exist.
         return self.model(**self.output)
 
 
 # The list syntax from the first 3 inputs is not supported yet.
-inputs = [input4, input5, input6, input7, input8, input9]
+inputs = [input1, input2, input3, input4, input5, input6, input7, input8, input9]
 outputs = []
 p = RowParser(From)
 
