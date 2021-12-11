@@ -110,7 +110,7 @@ class RowParser:
             field[key] = model(value)
 
     def find_entry(self, model, output_field, field_path):
-        # Without the output_field (which may be a nested structure),
+        # Within the output_field (which may be a nested structure),
         # traverse the field_path to find the subfield to assign the value to.
         # Return that field (via a parent object and a key, so that we can
         # overwrite its value) and its model.
@@ -169,7 +169,15 @@ class RowParser:
         # This creates/populates a field in self.output
         # The field is determined by column_name, its value by value
         field_path = column_name.split(':')
+        # Find the destination subfield in self.output that corresponds to field_path
         field, key, model = self.find_entry(self.model, self.output, field_path)
+        # The destination field in self.output is field[key], its type is model.
+        # Therefore the value should be assigned to field[key].
+        # (Note: This is a bit awkward; if we returned field[key] itself, we could
+        # not easily overwrite its value. So we return field and key separately.
+        # Ideally we would return a pointer to the destination field.
+        # The model of field[key] is model, and thus value should also be interpreted
+        # as being of type model.
         if issubclass(model, List) or issubclass(model, ParserModel):
             # If the expected type of the value is list/object,
             # parse the cell content as such.
