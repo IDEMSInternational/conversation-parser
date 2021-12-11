@@ -2,97 +2,21 @@ from collections import defaultdict
 from typing import List
 from pydantic import BaseModel
 
-class Condition(BaseModel):
-    value: str = ''
-    var: str = ''
-    type: str = ''
-    name: str = ''
-    # TODO: We could specify proper default values here, and write custom
-    # validators that replace '' with the actual default value.
 
+class ParserModel(BaseModel):
 
-class From(BaseModel):
-    row_id: str
-    conditions: List[Condition]
+    def header_name_to_field_name(header):
+        # Given a human-friendly column header name, map it to the
+        # string defining which field(s) in the model the cell
+        # value corresponds to.
+        # This is necessary as we might want
+        # to use some string representations as fields which are
+        # reserved words in python.
+        return header
 
-
-output_instance = {
-    'row_id': '5',
-    'conditions': [
-        {'value':'1', 'var':'', 'type':'has_phrase', 'name':'A'},
-        {'value':'2', 'var':'', 'type':'has_phrase', 'name':'B'},
-        {'value':'3', 'var':'', 'type':'has_phrase', 'name':''},
-    ]
-}
-
-input1 = {
-    'row_id': '5',
-    'conditions:*:value' : ['1', '2', '3'],
-    'conditions:*:var' : '',
-    'conditions:*:type' : ['has_phrase', 'has_phrase', 'has_phrase'],
-    'conditions:*:name' : ['A','B',''],
-}
-
-input2 = {
-    'row_id': '5',
-    'conditions:*:value' : ['1', '2', '3'],
-    'conditions:*:var' : '',
-    'conditions:*:type' : ['has_phrase', 'has_phrase', 'has_phrase'],
-    'conditions:*:name' : ['A','B'],
-}
-
-input3 = {
-    'row_id': '5',
-    'conditions:*:value' : ['1', '2', '3'],
-    'conditions:*:var' : '',
-    'conditions:*:type' : 'has_phrase',
-    'conditions:*:name' : ['A','B',''],
-}
-
-input4 = {
-    'row_id': '5',
-    'conditions:1' : ['1', '', 'has_phrase', 'A'],
-    'conditions:2' : ['2', '', 'has_phrase', 'B'],
-    'conditions:3' : ['3', '', 'has_phrase', ''],
-}
-
-input5 = {
-    'row_id': '5',
-    'conditions:1' : ['1', '', 'has_phrase', 'A'],
-    'conditions:2' : ['2', '', 'has_phrase', 'B'],
-    'conditions:3' : ['3', '', 'has_phrase'],
-}
-
-input6 = {
-    'row_id': '5',
-    'conditions:1' : [['value', '1'], ['type', 'has_phrase'], ['name', 'A']],
-    'conditions:2' : [['value', '2'], ['type', 'has_phrase'], ['name', 'B']],
-    'conditions:3' : [['value', '3'], ['type', 'has_phrase']],
-}
-
-input7 = {
-    'row_id': '5',
-    'conditions:1' : ['1', '', 'has_phrase', ['name', 'A']],
-    'conditions:2' : ['2', '', ['type', 'has_phrase'], ['name', 'B']],
-    'conditions:3' : ['3', ['type', 'has_phrase']],
-}
-
-input8 = {
-    'row_id': '5',
-    'conditions' : [['1', '', 'has_phrase', 'A'], ['2', '', 'has_phrase', 'B'], ['3', '', 'has_phrase', '']],
-}
-
-input9 = {
-    'row_id': '5',
-    'conditions:1:value' : '1',
-    'conditions:1:type' : 'has_phrase',
-    'conditions:1:name' : 'A',
-    'conditions:2:value' : '2',
-    'conditions:2:type' : 'has_phrase',
-    'conditions:2:name' : 'B',
-    'conditions:3:value' : '3',
-    'conditions:3:type' : 'has_phrase',
-}
+    def header_name_to_field_name_with_context(header, row):
+        # This is used for models representing a full sheet row.
+        return header
 
 
 class RowParser:
@@ -103,6 +27,17 @@ class RowParser:
     def __init__(self, model):
         self.model = model
         self.output = None  # Gets reinitialized with each call to parse_row
+
+    def try_assign_as_kwarg(self, field, key, value, model):
+        # If value can be interpreted as a (field, field_value) pair for a field of model,
+        # assign value to field[key] (which represents the field in the model)
+        if type(value) == list and len(value) == 2 and type(value[0]) == str:
+            first_entry_as_key = model.header_name_to_field_name(value[0])
+            if first_entry_as_key in model.__fields__:
+                self.assign_value(field[key], first_entry_as_key, value[1], model.__fields__[first_entry_as_key].outer_type_)
+                return True
+        return False
+
 
     def assign_value(self, field, key, value, model):
         # Given a field in the output and a key, assign
@@ -115,7 +50,7 @@ class RowParser:
 
         # Using both key and field here because if we passed field[key],
         # we can't do call by reference with basic types.
-        if issubclass(model, BaseModel):
+        if issubclass(model, ParserModel):
             # The value should be a dict/object
             field[key] = {}
             # Get the list of keys that are available for the target model
@@ -126,24 +61,22 @@ class RowParser:
             if type(value) != list:
                 # It could be that an object is specified via a single element.
                 value = [value]
-            elif len(value) == 2 and value[0] in model_fields:
-                # Or via a single KWArg
+            if self.try_assign_as_kwarg(field, key, value, model):
+                # Check if value could encode a single KWArg; if yes, assign as such.
                 # Note: We're resolving an ambiguity here in favor of kwargs.
                 # in principle, this could also be two positional arguments.
-                self.assign_value(field[key], value[0], value[1], model.__fields__[value[0]].outer_type_)
                 return
 
             for i, entry in enumerate(value):
                 # Go through the list of arguments
                 kwarg_found = False
-                if type(entry) == list and len(entry) == 2 and entry[0] in model_fields:
+                if self.try_assign_as_kwarg(field, key, entry, model):
                     # This looks like a KWArg
                     # Note: We're resolving an ambiguity here in favor of kwargs.
                     # in principle, this could also be a positional argument that is a list.
-                    self.assign_value(field[key], entry[0], entry[1], model.__fields__[entry[0]].outer_type_)
                     kwarg_found = True
                 else:
-                    # This looks like a positional argument
+                    # This isn't a KWarg, so we interpret is as a positional argument
                     # KWArgs should come after positional arguments --> assert
                     assert not kwarg_found
                     entry_key = model_fields[i]
@@ -185,13 +118,13 @@ class RowParser:
 
         # We're creating the output object's fields as we're going through it.
         # It'd be nicer to already have a template.
-        field = field_path[0]
+        field_name = field_path[0]
         if issubclass(model, List):
             # Get the type that's inside the list
             assert len(model.__args__) == 1
             child_model = model.__args__[0]
 
-            index = int(field) - 1
+            index = int(field_name) - 1
             if len(output_field) <= index:
                 # Create a new list entry for this, if necessary
                 # We assume the columns are always in order 1, 2, 3, ... for now
@@ -201,10 +134,10 @@ class RowParser:
 
             key = index
         else:
-            if not field in model.__fields__:
-                raise ValueError(f"Field {field} doesn't exist in target type.")
-            key = field
-            child_model = model.__fields__[field].outer_type_
+            key = model.header_name_to_field_name(field_name)
+            if not key in model.__fields__:
+                raise ValueError(f"Field {key} doesn't exist in target type.")
+            child_model = model.__fields__[key].outer_type_
             # TODO: how does ModelField.outer_type_ and ModelField.type_
             # deal with nested lists, e.g. List[List[str]]?
             # Write test cases and fix code.
@@ -222,7 +155,7 @@ class RowParser:
             # If field doesn't exist yet in our output object, create it.
             if issubclass(child_model, List) and output_field[key] is None:
                 output_field[key] = []
-            elif issubclass(child_model, BaseModel) and output_field[key] is None:
+            elif issubclass(child_model, ParserModel) and output_field[key] is None:
                 output_field[key] = {}
             # recurse
             self.find_entry_and_assign(child_model, output_field[key], field_path[1:], value)
@@ -230,12 +163,34 @@ class RowParser:
     def parse_entry(self, column_name, value):
         # This creates/populates a field in self.output
         # The field is determined by column_name, its value by value
+
+        # TODO: We have to refactor find_entry_and_assign to only do
+        # find_entry, and instead return the information that is needed
+        # to do the assignment. Then, before doing the assignment,
+        # we have check whether the type is basic or list/object,
+        # and depending on that send the value to the StringParser
+        # (which turns strings into lists of lists).
+        # Only then we then feed the value into the assign function.
         field_path = column_name.split(':')
         self.find_entry_and_assign(self.model, self.output, field_path, value)
 
     def parse_row(self, data):
+        # data is a dict where the keys are column header names,
+        # and the values are the corresponding values of the cells
+        # in the spreadsheet (i.e. strings).
+        # However, because we don't have the string parser yet,
+        # the values are assumed to be parsed already, i.e. are
+        # nested lists.
+
         # Initialize the output template as a dict
-        self.output = dict()
+        self.output = {}
+
+        # Apply map from header string to field specification
+        data_rekeyed = {}
+        for k, v in data.items():
+            k = self.model.header_name_to_field_name_with_context(k, data)
+            data_rekeyed[k] = v
+        data = data_rekeyed
 
         # For each column with an asterisk (*) (indicating list of fields),
         # Compute how long the implied list is by taking the maximum
@@ -263,17 +218,3 @@ class RowParser:
         # helps us fill in default values where no entries exist.
         return self.model(**self.output)
 
-
-# The list syntax from the first 3 inputs is not supported yet.
-inputs = [input1, input2, input3, input4, input5, input6, input7, input8, input9]
-outputs = []
-p = RowParser(From)
-
-for inp in inputs:
-    out = p.parse_row(inp)  # We get an instance of the model
-    outputs.append(out)
-    # Note: we can also serialize via out.json(indent=4) for printing
-    # or out.dict()
-
-for out in outputs:
-    assert out.dict() == output_instance
