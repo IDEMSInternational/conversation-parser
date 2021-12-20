@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from models import Row
 from rapidpro.parser import Parser
 from rapidpro.utils import get_dict_from_csv, get_cell_type_for_column_header, CellType, get_object_from_cell_value, \
     get_separators
@@ -133,10 +134,26 @@ class TestParsing(unittest.TestCase):
         self.assertEqual(':', s_2)
         self.assertIsNone(s_3)
 
-
     def test_switch_node_rows(self):
         parser = Parser(None, sheet_rows=self.switch_node_rows, flow_name='switch_node')
         parser.parse()
 
         render_output = parser.container.render()
         print(json.dumps(render_output))
+
+    def test_parse_conditions(self):
+        row = Row(self.switch_node_rows[1])
+        conditions = row.get_conditions()
+
+        self.assertEqual(2, len(conditions))
+
+        self.assertEqual('a', conditions[0]['condition'])
+        self.assertIsNone(conditions[0]['condition_var'])
+        self.assertEqual('has_any_word', conditions[0]['condition_type'])
+        self.assertEqual('A', conditions[0]['condition_name'])
+
+        self.assertEqual('b', conditions[1]['condition'])
+        self.assertIsNone(conditions[1]['condition_var'])
+        self.assertEqual('has_any_word', conditions[1]['condition_type'])
+        self.assertEqual('B', conditions[1]['condition_name'])
+

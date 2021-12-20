@@ -151,7 +151,6 @@ class Parser:
                 if from_row_id == origin_row_id and row['condition'] == condition:
                     return self.row_id_to_node_map()
 
-
     def _find_node_with_conditional_exit(self, row_id, condition):
         row = self.sheet_map[row_id]
         condition_columns = [key for key in row.keys() if key.startswith('condition:')]
@@ -161,12 +160,9 @@ class Parser:
                 if condition_obj['condition'] == condition:
                     pass
 
-
-        valid_conditions = [get_object_from_cell_value(row[column_name]) for column_name in condition_columns if row[column_name]]
+        valid_conditions = [get_object_from_cell_value(row[column_name]) for column_name in condition_columns if
+                            row[column_name]]
         return valid_conditions
-
-
-
 
     def _parse_row(self, row):
         row_action = self.get_row_action(row)
@@ -183,18 +179,12 @@ class Parser:
 
             separator_1, _, _ = get_separators(row['from'])
             from_row_ids = row['from'].split(separator_1)
-            if len(from_row_ids) == 1:
-                if row['from'] != 'start':
+
+            for from_id in from_row_ids:
+                if from_id != 'start':
                     from_nodes = self._get_from_nodes(row['from'])
                     for node in from_nodes:
                         node.update_default_exit(new_node.uuid)
-            elif len(from_row_ids) > 1:
-                for from_row_id in from_row_ids:
-                    for row_id, node in self.row_id_to_node_map.items():
-                        pass
-
-
-
 
             self.container.add_node(new_node)
 
