@@ -24,6 +24,28 @@ class ParserModel(BaseModel):
         return header
 
 
+def is_list_type(model):
+    # Determine whether model is a list type,
+    # such as list, List, List[str], ...
+    # issubclass only works for Python <=3.6
+    # model.__dict__.get('__origin__') returns different things in different Python version.
+    # This function tries to accommodate both 3.6 and 3.8 (at least)
+    return model == list or model == List or model.__dict__.get('__origin__') in [list, List]
+
+
+def is_parser_model_type(model):
+    # Determine whether model is a subclass of ParserModel.
+    try:
+        return issubclass(model, ParserModel)
+    except TypeError:
+        # This occurs in Python >= 3.7 if one argument is a nested type, e.g. List[str]
+        return False
+
+
+def is_basic_type(model):
+    return model in [str, int, float, bool]
+
+
 class RowParser:
     # Takes a dictionary of cell entries, whose keys are the column names
     # and the values are the cell content converted into nested lists.
@@ -56,7 +78,7 @@ class RowParser:
 
         # Using both key and field here because if we passed field[key],
         # we can't do call by reference with basic types.
-        if issubclass(model, ParserModel):
+        if is_parser_model_type(model):
             # The value should be a dict/object
             field[key] = {}
             # Get the list of keys that are available for the target model
@@ -88,7 +110,7 @@ class RowParser:
                     entry_key = model_fields[i]
                     self.assign_value(field[key], entry_key, entry, model.__fields__[entry_key].outer_type_)
 
-        elif issubclass(model, List):
+        elif is_list_type(model):
             # Get the type that's inside the list
             assert len(model.__args__) == 1
             child_model = model.__args__[0]
@@ -105,6 +127,7 @@ class RowParser:
                 self.assign_value(field[key], -1, entry, child_model)
 
         else:
+            assert is_basic_type(model)
             # The value should be a basic type
             # TODO: Ensure the types match. E.g. we don't want value to be a list
             field[key] = model(value)
@@ -123,7 +146,7 @@ class RowParser:
         # We're creating the output object's fields as we're going through it.
         # It'd be nicer to already have a template.
         field_name = field_path[0]
-        if issubclass(model, List):
+        if is_list_type(model):
             # Get the type that's inside the list
             assert len(model.__args__) == 1
             child_model = model.__args__[0]
@@ -138,6 +161,7 @@ class RowParser:
 
             key = index
         else:
+            assert is_parser_model_type(model)
             key = model.header_name_to_field_name(field_name)
             if not key in model.__fields__:
                 raise ValueError(f"Field {key} doesn't exist in target type.")
@@ -158,9 +182,9 @@ class RowParser:
         else:
             # The field has subfields, keep going and recurse.
             # If field doesn't exist yet in our output object, create it.
-            if issubclass(child_model, List) and output_field[key] is None:
+            if is_list_type(child_model) and output_field[key] is None:
                 output_field[key] = []
-            elif issubclass(child_model, ParserModel) and output_field[key] is None:
+            elif is_parser_model_type(child_model) and output_field[key] is None:
                 output_field[key] = {}
             # recurse
             return self.find_entry(child_model, output_field[key], field_path[1:])
@@ -178,7 +202,7 @@ class RowParser:
         # Ideally we would return a pointer to the destination field.
         # The model of field[key] is model, and thus value should also be interpreted
         # as being of type model.
-        if issubclass(model, List) or issubclass(model, ParserModel):
+        if is_list_type(model) or is_parser_model_type(model):
             # If the expected type of the value is list/object,
             # parse the cell content as such.
             # Otherwise leave it as a string
