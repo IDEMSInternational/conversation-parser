@@ -1,0 +1,13 @@
+condition_value,condition_var,condition_type,condition_name,condition:1,condition:2,condition:3,condition:4,condition:5
+,,,,,,,,
+a;b,,has_any_word;has_any_word,A;B,condition;a|condition_type;has_any_word|condition_name;A,condition;b|condition_type;has_any_word|condition_name;B,,,
+Complete,,,,,,,,
+a,expression,has_any_word,A,condition;a|condition_type;has_any_word|condition_name;A|condition_var;expression,,,,
+a,@contact.name,has_any_word,A,,,,,
+a,@results.result_wfr,has_any_word,A,,,,,
+test group,,,,,,,,
+a,,has_any_word,A,,,,,
+1,,,,,,,,
+2;3,,,,,,,,
+,,,,,,,,
+Expired,,,,,,,,
